@@ -1,0 +1,361 @@
+drop table Employee;
+drop table Drug;
+Drop table Drug_order;
+Drop table Customer;
+Drop table Insurance;
+drop table Purchase;
+
+
+
+
+CREATE TABLE Customer (
+    Customer_id int  NOT NULL,
+    Name varchar(25)  NOT NULL,
+    DateOfBirth date  NOT NULL,
+    Insurance_id int  NOT NULL,
+    CONSTRAINT Customer_pk PRIMARY KEY (Customer_id)
+);
+
+
+-- Table: Drug
+CREATE TABLE Drug (
+    Drug_id int  NOT NULL,
+    Name varchar(25)  NOT NULL,
+    Category varchar(50)  NOT NULL,
+    Price int  NOT NULL,
+    CONSTRAINT Drug_pk PRIMARY KEY (Drug_id)
+);
+
+
+
+-- Table: Drug_Order
+CREATE TABLE Drug_Order (
+    Drug_order_id int  NOT NULL,
+    DrugQuantity int  NOT NULL,
+    ordered_drug_id int  NOT NULL,
+    Purchase_id int  NOT NULL,
+    CONSTRAINT Drug_Order_pk PRIMARY KEY (Drug_order_id)
+);
+
+
+-- Table: Employee
+CREATE TABLE Employee (
+    employee_id int  NOT NULL,
+    ename varchar(25)  NOT NULL,
+    salary int  NOT NULL,
+    HireDate date  NOT NULL,
+    CONSTRAINT Employee_pk PRIMARY KEY (employee_id)
+);
+
+
+-- Table: Insurance
+CREATE TABLE Insurance (
+    Insurance_id int  NOT NULL,
+    BrandName varchar(20)  NOT NULL,
+    Insurance_No int  NOT NULL,
+    CONSTRAINT Insurance_pk PRIMARY KEY (Insurance_id)
+);
+
+
+
+-- Table: Purchase
+CREATE TABLE Purchase (
+    purchase_id int  NOT NULL,
+    purchase_date date  NOT NULL,
+    seller_id int  NOT NULL,
+    buyer_id int  NOT NULL,
+    CONSTRAINT Purchase_pk PRIMARY KEY (purchase_id)
+);
+
+from purchase;
+
+-- foreign keys
+-- Reference: Customer_Insurance (table: Customer)
+ALTER TABLE Customer ADD CONSTRAINT Customer_Insurance
+    FOREIGN KEY (Insurance_id)
+    REFERENCES Insurance (Insurance_id)  
+    NOT DEFERRABLE 
+    INITIALLY IMMEDIATE
+;
+
+-- Reference: Drug_Order_Drug (table: Drug_Order)
+ALTER TABLE Drug_Order ADD CONSTRAINT Drug_Order_Drug
+    FOREIGN KEY (ordered_drug_id)
+    REFERENCES Drug (Drug_id)  
+    NOT DEFERRABLE 
+    INITIALLY IMMEDIATE
+;
+
+-- Reference: Drug_Order_Purchase (table: Drug_Order)
+ALTER TABLE Drug_Order ADD CONSTRAINT Drug_Order_Purchase
+    FOREIGN KEY (Purchase_id)
+    REFERENCES Purchase (purchase_id)  
+    NOT DEFERRABLE 
+    INITIALLY IMMEDIATE
+;
+
+-- Reference: Purchase_Customer (table: Purchase)
+ALTER TABLE Purchase ADD CONSTRAINT Purchase_Customer
+    FOREIGN KEY (buyer_id)
+    REFERENCES Customer (Customer_id)  
+    NOT DEFERRABLE 
+    INITIALLY IMMEDIATE
+;
+
+
+
+-- Reference: Purchase_Employee (table: Purchase)
+ALTER TABLE Purchase ADD CONSTRAINT Purchase_Employee
+    FOREIGN KEY (seller_id)
+    REFERENCES Employee (employee_id)  
+;
+
+--add bonus to employee for given name
+
+CREATE OR REPLACE PROCEDURE RaiseSal(bname nvarchar2, bonus int) 
+As
+NoEmployee Exception;
+CURSOR person IS
+Select employee_id
+From employee
+Where ename = bname;
+counting Number;
+idP Number;
+Begin
+Select COUNT(employee_id) into counting
+From employee
+Where ename = bname;
+IF counting = 0 Then raise NoEmployee;
+Else
+Open person;
+Loop
+Fetch person into idP;
+Exit When person%notfound;
+
+Update Employee
+Set Salary = Salary+bonus
+Where employee_id = idP;
+End Loop;
+
+dbms_output.put_line('Salary of employee ' || bname || ' raised by' || bonus);
+
+END IF;
+Exception When NoEmployee Then 
+
+dbms_output.put_line('There are no such employee');
+
+END;
+
+select ename,salary
+from employee
+where ename='Kaan';
+
+EXEC RaiseSal('Kaan',200);
+
+----Increase price for drug a %10 and drug b %15
+drop procedure IncreasePrice;
+CREATE OR REPLACE PROCEDURE IncreasePrice
+As 
+NoDrug Exception;
+counting Number;
+idD Number;
+
+CURSOR ab IS
+SELECT Drug_id
+FROM Drug
+WHERE name='DRUG A' or name='DRUG B';
+
+Begin
+Select COUNT(Drug_id) into counting
+From Drug
+Where name='DRUG A' or name='DRUG B';
+
+IF counting = 0 
+Then raise NoDrug;
+ELSE
+OPEN ab;
+LOOP
+FETCH ab into idD;
+EXIT WHEN ab%notfound;
+
+Update Drug 
+Set Price = price*1.15
+Where name='DRUG A' and Drug_id = idD;
+Update Drug
+Set Price = price*1.1 
+Where name='DRUG B' and Drug_id = idD;
+
+End Loop;
+END IF;
+
+Exception When NoDrug Then dbms_output.put_line('There are no such drug');
+END;
+
+exec IncreasePrice;
+
+select *
+from drug;
+
+--Displays customer for given insurance_id
+CREATE OR REPLACE PROCEDURE display_insurance_customer(i_id integer)
+as
+NoCustomer exception;
+cust_id integer;
+cust_name varchar2(20);
+cursor cust_records is
+select Customer_id,name
+from customer
+where Insurance_id=i_id;
+Begin
+OPEN cust_records;
+LOOP
+FETCH cust_records into cust_id,cust_name;
+EXIT WHEN cust_records%NOTFOUND;
+DBMS_OUTPUT.PUT_LINE('Customer num' || cust_id||'and Customer name' ||cust_name);
+end loop;
+Close cust_records;
+END;
+
+EXEC display_insurance_customer('2001');
+
+select *
+from customer;
+
+--Triggers
+
+--Before insert row trigger which make sures that the salary for a new employee is larger than %80 of previous employee
+
+Create or replace trigger salary_control
+Before insert on Employee for each row
+Declare
+illegalSal exception;
+minSal number;
+cursor emp is
+select employee_id
+from employee
+where hiredate< :new.hiredate;
+idE number;
+Begin
+open emp;
+LOOP
+FETCH emp into idE;
+EXIT WHEN emp%NOTFOUND;
+select salary into minSal from employee where employee_id=idE;
+IF  :new.salary < minSal*0.8 then raise illegalSal;
+END IF;
+END LOOP;
+Close emp;
+EXCEPTION when illegalSal then 
+RAISE_APPLICATION_ERROR(-20111,'Provided salary is illegal.');
+END;
+
+INSERT INTO employee(employee_id,ename,salary,hiredate)
+VALUES(1128,'Maho',600,'16-JUL-2003');
+
+delete from employee where employee_id = 1128;
+
+
+DROP trigger salary_control;
+
+--trigger adds bonus to employee who sold Drug A and no other drugs!
+create or replace trigger bonus_emp 
+after insert on Drug_order for each row
+Declare
+cursor ab is
+select * from purchase;
+
+begin
+for pr in ab loop
+if :new.purchase_id = pr.purchase_id and :new.drugquantity > 2 then
+Update employee
+set salary = salary*0.1
+where employee_id = pr.seller_id;
+ DBMS_OUTPUT.PUT_LINE('10% Bonus added ');
+end if;
+end loop;
+
+end;
+
+drop trigger bonus_emp;
+
+select * from purchase;
+select * from drug_order;
+select salary from employee where employee_id = 1127;
+select * from employee;
+
+INSERT INTO drug_order VALUES (7013,5,3,5008);
+
+
+select* from drug_order;
+
+
+
+create or replace trigger show_customer_samename
+after insert on Customer for each row
+declare
+
+--notexists exception;
+cursor a1 is 
+select customer_id from customer where name = :new.name;
+idC number;
+cname varchar(50);
+
+begin
+open a1;
+Loop
+fetch a1 into idC;
+EXIT WHEN a1%NOTFOUND;
+Select name into cname from customer where customer_id = idC;
+DBMS_OUTPUT.PUT_LINE('Customer id: ' || idC || ' name: ' || cname);
+end loop;
+close a1;
+
+--Exception when notexists then DBMS_OUTPUT.PUT_LINE('There is no other customer with this name');
+
+END;
+
+INSERT INTO customer VALUES(3006,'Helanie','06-MAR-1981',2001);
+
+
+-- trigger that add 250 bonus to employee who has lower salary and hiredate than the new one 
+Create or replace trigger bonus_for_previous
+Before insert on Employee for each row
+Declare
+nosal exception;
+minSal number;
+cursor emp is
+select employee_id
+from employee
+where hiredate < :new.hiredate;
+idE number;
+ecount number;
+Begin
+select employee_id into ecount from employee where salary < :new.salary;
+if ecount = 0 then raise nosal;
+end if;
+open emp;
+LOOP
+FETCH emp into idE;
+EXIT WHEN emp%NOTFOUND;
+select salary into minSal from employee where employee_id=idE;
+IF minsal < :new.salary then
+update employee
+set salary = salary + 250
+where employee_id = idE;
+END IF;
+END LOOP;
+Close emp;
+EXCEPTION when nosal then 
+DBMS_OUTPUT.PUT_LINE('No lower salary than new employees.');
+
+END;
+
+select* from employee;
+
+INSERT INTO employee(employee_id,ename,salary,hiredate)
+VALUES(1129,'Cem',2800,'18-JUL-2004');
+
+delete from employee where ename = 'Cem';
+
+
+drop trigger  bonus_for_previous
