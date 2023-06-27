@@ -1,0 +1,247 @@
+T-SQL
+CREATE TABLE Customer (
+    Customer_id int  NOT NULL,
+    Name varchar(25)  NOT NULL,
+    DateOfBirth datetime  NOT NULL,
+    Insurance_id int  NOT NULL,
+    CONSTRAINT Customer_pk PRIMARY KEY (Customer_id)
+);
+CREATE TABLE Drug (
+    Drug_id int  NOT NULL,
+    Name varchar(25)  NOT NULL,
+    Category varchar(50)  NOT NULL,
+    Price int  NOT NULL,
+    CONSTRAINT Drug_pk PRIMARY KEY (Drug_id)
+);
+CREATE TABLE Drug_Order (
+    Drug_order_id int  NOT NULL,
+    DrugQuantity int  NOT NULL,
+    ordered_drug_id int  NOT NULL,
+    Purchase_id int  NOT NULL,
+    CONSTRAINT Drug_Order_pk PRIMARY KEY (Drug_order_id)
+);
+CREATE TABLE Employee (
+    employee_id int  NOT NULL,
+    ename varchar(25)  NOT NULL,
+    salary int  NOT NULL,
+    HireDate datetime  NOT NULL,
+    CONSTRAINT Employee_pk PRIMARY KEY (employee_id)
+);
+CREATE TABLE Insurance (
+    Insurance_id int  NOT NULL,
+    BrandName varchar(20)  NOT NULL,
+    Insurance_No int  NOT NULL,
+    CONSTRAINT Insurance_pk PRIMARY KEY (Insurance_id)
+);
+CREATE TABLE Purchase (
+    purchase_id int  NOT NULL,
+    purchase_date datetime  NOT NULL,
+    seller_id int  NOT NULL,
+    buyer_id int  NOT NULL,
+    CONSTRAINT Purchase_pk PRIMARY KEY (purchase_id)
+);
+CREATE PROCEDURE RaiseSal(@bname nvarchar(2000), @bonus int)
+As
+Begin
+DECLARE person CURSOR LOCAL FOR
+Select employee_id
+From employee
+Where ename = @bname;
+Declare @counting int;
+Declare @idP int;
+Declare @retSal int;
+
+Select @counting = COUNT(employee_id)
+From employee
+Where ename = @bname;
+
+Open person;
+While 1=1 begin
+Fetch person into @idP;
+If @@FETCH_STATUS <> 0 BREAK ;
+
+Update Employee
+Set Salary = Salary+@bonus
+Where employee_id = @idP;
+End;
+close person;
+
+Select @retSal = salary
+from Employee
+Where employee_id = @idP;
+
+return @retSal;
+
+END;
+INSERT INTO employee(employee_id,ename,salary,hiredate)
+VALUES(1129,'MahoMaho',4000,'19-JUL-2000');
+select * from Employee;
+Declare @x int;
+Execute @x = RaiseSal 'MahoMaho',300;
+print @x;
+
+------------ OUTPUT Prcoedure  ----Increase price for drug a %10 and drug b %15
+drop PROCEDURE IncreasePrice;
+CREATE PROCEDURE IncreasePrice
+@m varchar(100) OUTPUT
+As
+Begin 
+Declare @idD int;
+
+DECLARE ab CURSOR LOCAL FOR
+SELECT Drug_id
+FROM Drug
+WHERE name='DRUG A' or name='DRUG B';
+
+ 
+Set nocount on;
+
+OPEN ab;
+WHILE 1=1 BEGIN
+FETCH ab into @idD;
+IF @@FETCH_STATUS <> 0 BREAK ;
+
+Update Drug 
+Set Price = price*1.15
+Where name='DRUG A' and Drug_id = @idD;
+Update Drug
+Set Price = price*1.1 
+Where name='DRUG B' and Drug_id = @idD;
+End;
+Select @m = 'Prices increased for Drug A by 15% and for Drug B by 10%.';
+
+END;
+
+Declare @m varchar(100);
+Execute IncreasePrice @m OUTPUT;
+Print @m;
+
+---RESULT   --Displays customer for given insurance_id
+drop PROCEDURE display_insurance_customer;
+CREATE PROCEDURE display_insurance_customer @i_id integer
+as
+begin
+declare @cust_id integer;
+declare @cust_name varchar(20);
+declare cust_records cursor local for
+select Customer_id,name
+from customer
+where Insurance_id=@i_id;
+ 
+Set nocount on;
+OPEN cust_records;
+WHILE 1=1 BEGIN
+FETCH cust_records into @cust_id,@cust_name;
+IF @@FETCH_STATUS <> 0 BREAK ;
+PRINT 'Customer num' + CAST(@cust_id as varchar) + ' and Customer name ' + @cust_name;
+end;
+Close cust_records;
+Deallocate cust_records;
+END;
+
+Execute display_insurance_customer 2001;
+
+
+--trigger that add 250 bonus to employee who has lower salary and hiredate than the new one 
+drop trigger bonus_for_previous;
+Create trigger bonus_for_previous on Employee
+for insert as
+
+Declare @minSal int;
+Declare @new_sal int;
+Select @new_sal = salary from inserted;
+
+Declare @new_date date;
+Select @new_date = HireDate from inserted;
+
+declare emp cursor local for
+select employee_id
+from employee
+where hiredate < @new_date;
+Declare @idE int;
+
+Begin
+open emp;
+WHILE 1=1 BEGIN
+FETCH emp into @idE;
+IF @@FETCH_STATUS <> 0 BREAK ;
+select @minSal = salary from employee where employee_id=@idE;
+IF @minsal < @new_sal
+update employee
+set salary = salary + 250
+where employee_id = @idE;
+END;
+Close emp;
+
+
+END;
+
+INSERT INTO employee(employee_id,ename,salary,hiredate)
+VALUES(1130,'Cem',2800,'18-JUL-2004');
+
+select * from Employee;
+
+
+
+--trigger adds bonus to employee who sold more than 2 drugs in one purchase!!!
+drop trigger bonus_emp ;
+create trigger bonus_emp on Drug_order 
+after insert  as
+
+declare @new_pid int;
+select @new_pid = purchase_id from inserted;
+declare @new_dq int;
+select @new_dq = DrugQuantity from inserted;
+declare ab cursor local for
+select purchase_id from purchase;
+
+declare @t int;
+
+begin
+open ab;
+WHILE 1=1 BEGIN
+FETCH ab into @t;
+IF @@FETCH_STATUS <> 0 BREAK ;
+if @new_pid = @t and @new_dq > 2
+Update employee
+set salary = salary*0.1
+where employee_id = @t;
+ PRINT '10% Bonus added ';
+end 
+close ab;
+end;
+
+
+INSERT INTO drug_order VALUES (7015,5,3,5008);
+
+
+
+--Before insert row trigger which make sures that the salary for a new employee is larger than %80 of previous employee
+Create trigger salary_control on Employee
+for insert  as
+
+Declare @minSal int;
+Declare @new_sal int;
+Select @new_sal = salary from inserted;
+Declare @new_date date;
+Select @new_date = HireDate from inserted;
+declare emp cursor local for
+select employee_id
+from employee
+where hiredate< @new_date;
+Declare @idE float;
+
+Begin
+open emp;
+WHILE 1=1 BEGIN
+FETCH emp into @idE;
+IF @@FETCH_STATUS <> 0 BREAK ;
+select @minSal = salary from employee where employee_id=@idE;
+IF  @new_sal < @minSal*0.8 
+THROW 51000, 'Illegal salary',1;
+END;
+Close emp;
+END;
+
+INSERT INTO employee(employee_id,ename,salary,hiredate)
+VALUES(1131,'Maho',600,'16-JUL-2003');
